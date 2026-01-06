@@ -1,0 +1,17 @@
+{
+  "name": "mta-donation-aid",
+  "version": "2.0.0",
+  "description": "AID-based donation system for MTA:SA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "mysql2": "^3.6.5",
+    "dotenv": "^16.3.1",
+    "cors": "^2.8.5",
+    "@paypal/checkout-server-sdk": "^1.0.3"
+  }
+}
