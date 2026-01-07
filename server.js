@@ -336,9 +336,15 @@ app.post('/api/mta/pending', async (req, res) => {
   try {
     const { token } = req.body;
 
-    if (token !== process.env.MTA_TOKEN) {
-      console.warn('⚠️ Unauthorized MTA request');
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    // Debug logging
+    console.log('MTA Request - Token received length:', token ? token.length : 0);
+    console.log('MTA Request - Expected token length:', process.env.MTA_TOKEN ? process.env.MTA_TOKEN.length : 0);
+    
+    if (!token || token !== process.env.MTA_TOKEN) {
+      console.warn('⚠️ Unauthorized MTA request - Token mismatch');
+      console.warn('Received (first 20):', token ? token.substring(0, 20) + '...' : 'null');
+      console.warn('Expected (first 20):', process.env.MTA_TOKEN ? process.env.MTA_TOKEN.substring(0, 20) + '...' : 'null');
+      return res.status(401).json({ success: false, error: 'Unauthorized - Invalid token' });
     }
 
     const [donations] = await pool.execute(
@@ -367,8 +373,9 @@ app.post('/api/mta/mark-done', async (req, res) => {
   try {
     const { token, donationId, aid } = req.body;
 
-    if (token !== process.env.MTA_TOKEN) {
-      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    if (!token || token !== process.env.MTA_TOKEN) {
+      console.warn('⚠️ Unauthorized mark-done request');
+      return res.status(401).json({ success: false, error: 'Unauthorized - Invalid token' });
     }
 
     if (!donationId) {
