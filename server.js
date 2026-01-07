@@ -94,6 +94,18 @@ function calculateRewards(type, amountGEL) {
 }
 
 // ============================================
+// FX RATE (GEL -> USD)
+// ============================================
+async function getCurrentGelToUsdRate() {
+  const rate = parseFloat(process.env.GEL_USD_RATE);
+  if (!rate || rate <= 0) {
+    throw new Error('GEL_USD_RATE is not configured');
+  }
+  return rate;
+}
+
+
+// ============================================
 // API ENDPOINTS
 // ============================================
 
@@ -162,99 +174,124 @@ app.post('/api/check-aid', async (req, res) => {
 app.post('/api/create-order', async (req, res) => {
   try {
     const { aid, type, amount } = req.body;
-    
+
+    // ================================
+    // VALIDATION
+    // ================================
     if (!aid || !type || !amount) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields: aid, type, amount' 
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: aid, type, amount'
       });
     }
 
     if (type !== 'coins' && type !== 'money') {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Type must be "coins" or "money"' 
+      return res.status(400).json({
+        success: false,
+        error: 'Type must be "coins" or "money"'
       });
     }
 
     const amountGEL = parseFloat(amount);
     if (isNaN(amountGEL) || amountGEL < 1 || amountGEL > 1000) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Amount must be between 1-1000 GEL' 
+      return res.status(400).json({
+        success: false,
+        error: 'Amount must be between 1-1000 GEL'
       });
     }
 
-const aidNumber = parseInt(aid);
+    const aidNumber = parseInt(aid);
 
-const [accounts] = await pool.execute(
-  'SELECT AID, username FROM users WHERE AID = ?',
-  [aidNumber]
-);
+    // ================================
+    // USER CHECK
+    // ================================
+    const [accounts] = await pool.execute(
+      'SELECT AID, username FROM users WHERE AID = ?',
+      [aidNumber]
+    );
 
-if (accounts.length === 0) {
-  return res.status(404).json({ success: false, error: 'AID not found' });
-}
+    if (accounts.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'AID not found'
+      });
+    }
 
-const username = accounts[0].username;
-const rewards = calculateRewards(type, amountGEL);
+    const username = accounts[0].username;
 
-// Step 1: Get current GEL -> USD rate
-const gelToUsdRate = await getCurrentGelToUsdRate(); // შენი API/PayPal rate
+    // ================================
+    // REWARDS CALCULATION (GEL-BASED)
+    // ================================
+    const rewards = calculateRewards(type, amountGEL);
 
-// Step 2: Convert GEL -> USD
-const amountUSD = (amountGEL * gelToUsdRate).toFixed(2);
+    // ================================
+    // FX CONVERSION (GEL -> USD)
+    // ================================
+    const gelToUsdRate = await getCurrentGelToUsdRate(); // 1 GEL = X USD
+    const amountUSD = (amountGEL * gelToUsdRate).toFixed(2);
 
-// Step 3: Create PayPal order
-const request = new paypal.orders.OrdersCreateRequest();
-request.prefer("return=representation");
-request.requestBody({
-  intent: 'CAPTURE',
-  purchase_units: [{
-    amount: {
-      currency_code: 'USD',
-      value: amountUSD
-    },
-    description: type === 'coins' 
-      ? `${rewards.coins} Coins for AID ${aidNumber}`
-      : `${rewards.money.toLocaleString()} Money for AID ${aidNumber}`,
-    custom_id: `${aidNumber}:${type}:${amountGEL}`
-  }],
-  application_context: {
-    brand_name: 'PROJECT GENESIS',
-    user_action: 'PAY_NOW'
-  }
-});
+    // ================================
+    // PAYPAL ORDER
+    // ================================
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.prefer('return=representation');
+    request.requestBody({
+      intent: 'CAPTURE',
+      purchase_units: [
+        {
+          amount: {
+            currency_code: 'USD',
+            value: amountUSD
+          },
+          description:
+            type === 'coins'
+              ? `${rewards.coins} Coins for AID ${aidNumber}`
+              : `${rewards.money.toLocaleString()} Money for AID ${aidNumber}`,
+          custom_id: `${aidNumber}:${type}:${amountGEL}`
+        }
+      ],
+      application_context: {
+        brand_name: 'PROJECT GENESIS',
+        user_action: 'PAY_NOW'
+      }
+    });
 
-const order = await payPalClient().execute(request);
+    const order = await payPalClient().execute(request);
 
-    
     console.log('✅ Order created:', {
       orderId: order.result.id,
       aid: aidNumber,
       username,
-      type,
-      amount: amountGEL,
+      amountGEL,
+      amountUSD,
+      fxRate: gelToUsdRate,
       rewards
     });
 
-    res.json({ 
-      success: true, 
+    // ================================
+    // RESPONSE TO FRONTEND
+    // ================================
+    res.json({
+      success: true,
       orderId: order.result.id,
-      rewards,
       username,
-      description: type === 'coins'
-        ? `${rewards.coins} Coins`
-        : `${rewards.money.toLocaleString()} Game Money`
+      amountGEL,
+      amountUSD,
+      rewards,
+      description:
+        type === 'coins'
+          ? `${rewards.coins} Coins`
+          : `${rewards.money.toLocaleString()} Game Money`
     });
   } catch (error) {
     console.error('Create order error:', error);
-    res.status(500).json({ 
-      success: false, 
+    res.status(500).json({
+      success: false,
       error: 'Failed to create order'
     });
   }
 });
+
 
 // Confirm payment
 app.post('/api/confirm-payment', async (req, res) => {
