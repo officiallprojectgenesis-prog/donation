@@ -49,7 +49,7 @@ function payPalClient() {
 
 // Dynamic CORS configuration
 const allowedOrigins = [
-  'https://testiko.netlify.app/',
+  'https://testiko.netlify.app',
   'http://91.134.166.74',
   // Add your Render frontend URL here when deployed
   process.env.FRONTEND_URL
