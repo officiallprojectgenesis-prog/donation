@@ -185,44 +185,49 @@ app.post('/api/create-order', async (req, res) => {
       });
     }
 
-    const aidNumber = parseInt(aid);
+const aidNumber = parseInt(aid);
 
-    const [accounts] = await pool.execute(
-      'SELECT AID, username FROM users WHERE AID = ?',
-      [aidNumber]
-    );
+const [accounts] = await pool.execute(
+  'SELECT AID, username FROM users WHERE AID = ?',
+  [aidNumber]
+);
 
-    if (accounts.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'AID not found' 
-      });
-    }
+if (accounts.length === 0) {
+  return res.status(404).json({ success: false, error: 'AID not found' });
+}
 
-    const username = accounts[0].username;
-    const rewards = calculateRewards(type, amountGEL);
-    
-    const request = new paypal.orders.OrdersCreateRequest();
-    request.prefer("return=representation");
-    request.requestBody({
-      intent: 'CAPTURE',
-      purchase_units: [{
-        amount: {
-          currency_code: 'USD',
-          value: amountGEL.toFixed(2)
-        },
-        description: type === 'coins' 
-          ? `${rewards.coins} Coins for AID ${aidNumber}`
-          : `${rewards.money.toLocaleString()} Money for AID ${aidNumber}`,
-        custom_id: `${aidNumber}:${type}:${amountGEL}`
-      }],
-      application_context: {
-        brand_name: 'PROJECT GENESIS',
-        user_action: 'PAY_NOW'
-      }
-    });
+const username = accounts[0].username;
+const rewards = calculateRewards(type, amountGEL);
 
-    const order = await payPalClient().execute(request);
+// Step 1: Get current GEL -> USD rate
+const gelToUsdRate = await getCurrentGelToUsdRate(); // შენი API/PayPal rate
+
+// Step 2: Convert GEL -> USD
+const amountUSD = (amountGEL * gelToUsdRate).toFixed(2);
+
+// Step 3: Create PayPal order
+const request = new paypal.orders.OrdersCreateRequest();
+request.prefer("return=representation");
+request.requestBody({
+  intent: 'CAPTURE',
+  purchase_units: [{
+    amount: {
+      currency_code: 'USD',
+      value: amountUSD
+    },
+    description: type === 'coins' 
+      ? `${rewards.coins} Coins for AID ${aidNumber}`
+      : `${rewards.money.toLocaleString()} Money for AID ${aidNumber}`,
+    custom_id: `${aidNumber}:${type}:${amountGEL}`
+  }],
+  application_context: {
+    brand_name: 'PROJECT GENESIS',
+    user_action: 'PAY_NOW'
+  }
+});
+
+const order = await payPalClient().execute(request);
+
     
     console.log('✅ Order created:', {
       orderId: order.result.id,
