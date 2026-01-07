@@ -44,11 +44,38 @@ function payPalClient() {
 }
 
 // ============================================
-// MIDDLEWARE
+// MIDDLEWARE - CORS FIXED
 // ============================================
-app.use(cors({ origin: process.env.ALLOWED_ORIGINS.split(',') }));
+
+// Dynamic CORS configuration
+const allowedOrigins = [
+  'https://testiko.netlify.app/',
+  'http://91.134.166.74',
+  // Add your Render frontend URL here when deployed
+  process.env.FRONTEND_URL
+].filter(Boolean); // Remove undefined values
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is allowed
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.warn('⚠️ Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
+// Logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
@@ -74,6 +101,7 @@ function calculateRewards(type, amountGEL) {
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok',
+    timestamp: new Date().toISOString(),
     rates: {
       coin: `1 GEL = ${COIN_RATE} Coin`,
       money: `1 GEL = ${MONEY_RATE.toLocaleString()} Money`
@@ -95,7 +123,6 @@ app.post('/api/check-aid', async (req, res) => {
 
     const aidNumber = parseInt(aid);
 
-    // Check if AID is valid (100000-999999)
     if (aidNumber < 100000 || aidNumber > 999999) {
       return res.status(400).json({ 
         success: false, 
@@ -136,7 +163,6 @@ app.post('/api/create-order', async (req, res) => {
   try {
     const { aid, type, amount } = req.body;
     
-    // Validate input
     if (!aid || !type || !amount) {
       return res.status(400).json({ 
         success: false, 
@@ -161,7 +187,6 @@ app.post('/api/create-order', async (req, res) => {
 
     const aidNumber = parseInt(aid);
 
-    // Check if AID exists
     const [accounts] = await pool.execute(
       'SELECT AID, username FROM users WHERE AID = ?',
       [aidNumber]
@@ -177,7 +202,6 @@ app.post('/api/create-order', async (req, res) => {
     const username = accounts[0].username;
     const rewards = calculateRewards(type, amountGEL);
     
-    // Create PayPal order
     const request = new paypal.orders.OrdersCreateRequest();
     request.prefer("return=representation");
     request.requestBody({
@@ -247,7 +271,6 @@ app.post('/api/confirm-payment', async (req, res) => {
     const amountGEL = parseFloat(amount);
     const aidNumber = parseInt(aid);
 
-    // Check duplicate
     const [existing] = await conn.execute(
       'SELECT id FROM donations WHERE order_id = ?',
       [orderId]
@@ -262,7 +285,6 @@ app.post('/api/confirm-payment', async (req, res) => {
       });
     }
 
-    // Verify AID exists
     const [accounts] = await conn.execute(
       'SELECT AID FROM users WHERE AID = ?',
       [aidNumber]
@@ -276,7 +298,6 @@ app.post('/api/confirm-payment', async (req, res) => {
       });
     }
 
-    // Capture PayPal payment
     const request = new paypal.orders.OrdersCaptureRequest(orderId);
     const capture = await payPalClient().execute(request);
     
@@ -289,10 +310,8 @@ app.post('/api/confirm-payment', async (req, res) => {
       });
     }
 
-    // Calculate rewards
     const rewards = calculateRewards(type, amountGEL);
 
-    // Insert donation
     await conn.execute(
       `INSERT INTO donations 
        (aid, type, amount_gel, coins_reward, money_reward, order_id, processed) 
@@ -335,15 +354,9 @@ app.post('/api/confirm-payment', async (req, res) => {
 app.post('/api/mta/pending', async (req, res) => {
   try {
     const { token } = req.body;
-
-    // Debug logging
-    console.log('MTA Request - Token received length:', token ? token.length : 0);
-    console.log('MTA Request - Expected token length:', process.env.MTA_TOKEN ? process.env.MTA_TOKEN.length : 0);
     
     if (!token || token !== process.env.MTA_TOKEN) {
-      console.warn('⚠️ Unauthorized MTA request - Token mismatch');
-      console.warn('Received (first 20):', token ? token.substring(0, 20) + '...' : 'null');
-      console.warn('Expected (first 20):', process.env.MTA_TOKEN ? process.env.MTA_TOKEN.substring(0, 20) + '...' : 'null');
+      console.warn('⚠️ Unauthorized MTA request');
       return res.status(401).json({ success: false, error: 'Unauthorized - Invalid token' });
     }
 
@@ -382,7 +395,6 @@ app.post('/api/mta/mark-done', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Missing donationId' });
     }
 
-    // Get donation details
     const [donations] = await pool.execute(
       'SELECT aid, coins_reward, money_reward FROM donations WHERE id = ? AND processed = FALSE',
       [donationId]
@@ -394,13 +406,11 @@ app.post('/api/mta/mark-done', async (req, res) => {
 
     const donation = donations[0];
 
-    // Update users table
     await pool.execute(
       'UPDATE users SET coins = coins + ?, money = money + ? WHERE AID = ?',
       [donation.coins_reward, donation.money_reward, donation.aid]
     );
 
-    // Mark as processed
     await pool.execute(
       'UPDATE donations SET processed = TRUE, processed_at = NOW() WHERE id = ?',
       [donationId]
@@ -427,6 +437,7 @@ app.listen(PORT, () => {
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('✅ MTA Donation Server (AID)');
   console.log(`📡 Port: ${PORT}`);
-  console.log(`💰 1 GEL = ${COIN_RATE} Coin | ${MONEY_RATE.toLocaleString()} Money`);
+  console.log(`💰 Rates: 1 GEL = ${COIN_RATE} Coin | ${MONEY_RATE.toLocaleString()} Money`);
+  console.log(`🌐 Allowed Origins:`, allowedOrigins);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
