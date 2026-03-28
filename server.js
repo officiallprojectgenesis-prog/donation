@@ -34,7 +34,7 @@ pool.getConnection()
 // ============================================
 const allowedOrigins = [
   'https://testiko.netlify.app',
-  'http://91.134.166.74',
+  'http://192.168.56.1:8080',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
