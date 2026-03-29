@@ -31,6 +31,7 @@ pool.getConnection()
 // ============================================
 const allowedOrigins = [
   'https://genesis-official.duckdns.org',
+  'http://192.168.56.1:8080',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
