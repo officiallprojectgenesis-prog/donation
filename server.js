@@ -30,11 +30,7 @@ pool.getConnection()
 // MIDDLEWARE
 // ============================================
 const allowedOrigins = [
-  'https://testiko.netlify.app',
-  'http://91.134.166.74',
-  'http://192.168.56.1:8080',
-  'http://localhost:5173',
-  'http://localhost:4173',
+  'https://genesis-official.duckdns.org',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
