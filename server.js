@@ -62,19 +62,33 @@ function calculateRewards(type, amountGEL) {
 }
 
 // ============================================
-// DB MIGRATION — status column
+// DB INIT — Create donations table
 // ============================================
-async function ensureStatusColumn() {
+async function ensureDonationsTable() {
   try {
-    await pool.execute(
-      "ALTER TABLE donations ADD COLUMN IF NOT EXISTS status ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid'"
-    );
-    console.log('✅ donations.status column ready');
-  } catch (_) {
-    console.log('ℹ️ status column check done');
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS donations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        aid INT NOT NULL,
+        type VARCHAR(20) NOT NULL,
+        amount_gel DECIMAL(10,2) NOT NULL DEFAULT 0,
+        coins_reward INT DEFAULT 0,
+        money_reward INT DEFAULT 0,
+        order_id VARCHAR(100),
+        processed BOOLEAN DEFAULT FALSE,
+        status ENUM('unpaid','paid') DEFAULT 'unpaid',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        processed_at TIMESTAMP NULL DEFAULT NULL
+      )
+    `);
+
+    console.log('✅ donations table ready');
+  } catch (err) {
+    console.error('❌ donations table error:', err);
   }
 }
-ensureStatusColumn();
+
+ensureDonationsTable();
 
 // ============================================
 // ENDPOINTS
